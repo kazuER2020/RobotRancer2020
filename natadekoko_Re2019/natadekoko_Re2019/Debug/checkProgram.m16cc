@@ -1,0 +1,9 @@
+-lang=c
+-I"..\..\..\common_r8c38a"
+-I"C:\WorkSpace\common_r8c38a"
+-D__UART0__
+-c
+-finfo
+-dir "C:\WorkSpace\natadekoko_Re2019\natadekoko_Re2019\Debug"
+-R8CE
+"C:\WorkSpace\natadekoko_Re2019\natadekoko_Re2019\checkProgram.c"
