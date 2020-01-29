@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "sfr_r838a.h"                  /* R8C/38A SFRの定義ファイル    */
-#include "r8c38a_lib.h"                 /* R8C/38A 制御ライブラリ       */
 #include "types3_beep.h"                /* ブザー追加                   */
 #include "printf_lib.h"
 #include "microsd_lib.h"
@@ -42,7 +41,7 @@
 #define C 5
 #define D 6
 
-#define VR  ( get_ad(14) )
+#define VR  ad2
 
 // 変更OK:
 /* dipsw:　4?6 */
@@ -81,6 +80,7 @@ volatile int     ENCHU_ANGLE_AD = 786;			 /* 円柱標的に突っ込む際のボリューム値 
 /* プロトタイプ宣言                     */
 /*======================================*/
 void init( void );
+void timer( unsigned long timer_set );
 unsigned char sensor_inp( void );
 unsigned char center_inp( void );
 unsigned char dipsw_get( void );
@@ -100,7 +100,6 @@ void motor_mode_f( int mode_l, int mode_r );
 void servoPwmOut( int pwm );
 void servoControl( void );
 void servoControl2( void );
-void stm_go( int degree );
 int check_crossline( void );
 int check_rightline( void );
 int check_leftline( void );
@@ -126,6 +125,7 @@ volatile const char      *C_TIME = __TIME__;     /* コンパイルした時間          
 
 volatile int             pattern       = 0;      /* マイコンカー動作パターン     */
 volatile int             pattern_settings = 0;
+volatile unsigned long   cnt0          = 0;
 volatile unsigned long   cnt_run       = 0;      /* タイマ用                     */
 volatile unsigned long   cnt1          = 0;      /* タイマ用                     */
 volatile unsigned long   check_cross_cnt = 0;    /* タイマ用                     */
@@ -194,10 +194,6 @@ volatile const int revolution_difference[] = {   /* 角度から内輪、外輪回転差計算
   39
 };
 
-/* その他 */
-volatile long    integral = 0;
-
-
 /* フルカラーLED用(p6) */
 volatile const int fullColor_data[] = {
   //  0:OFF 1:赤  2:緑　3:青  4:黄  5:紫  6:水色 7:白
@@ -221,7 +217,6 @@ void main( void )
 	
   /* マイコン機能の初期化 */
   init();                             /* 初期化                       */
-  fullColor_out(0);
   setMicroSDLedPort( &p6, &pd6, 0 );  /* microSDモニタLED設定 */
   _asm(" FSET I ");                   /* 全体の割り込み許可           */
   initBeepS();                        /* ブザー関連処理               */
@@ -258,14 +253,11 @@ void main( void )
   servoPwmOut( 0 );
   fullColor_out( 0 );
   setBeepPatternS( 0x8000 );
-  timer_ms(10);
+  timer(10);
   iSetLancer = CENTER_LNC;
   iLancer0 = getLancerAngle();
   
-  
   servoSet( 0 ); 
-
-		
   ///////////////////////////////
   
   fullColor_out( 0 );
@@ -276,7 +268,7 @@ void main( void )
 			cnt1 = 0;
 		}	
 	}
-	if( pattern >= 1 && pattern < 102){
+	if( pattern >= 1 && pattern < 101){
 		servoControl();
 		servoControl2();
 		servoPwmOut(iServoPwm);
@@ -337,7 +329,7 @@ void main( void )
           	pattern = 1;
           	break;
         }
-		printf("left= %4d, an_l=%4d, center= %4d,an_r= %4d, right= %4d\r", check_leftline(), get_ad(13), center_inp(), get_ad(12), check_rightline());
+//		printf("left= %4d, an_l=%4d, center= %4d,an_r= %4d, right= %4d\r", check_leftline(), get_ad(13), center_inp(), get_ad(12), check_rightline());
 //		printf("an_l=%4d, center= %4d,an_r= %4d,    sensor= %4d\r",  get_ad(13), center_inp(), get_ad(12), sensor_inp());
 
         
@@ -348,19 +340,19 @@ void main( void )
 
         led_out( 0x11 );
         setBeepPatternS( 0x8000 );  // 3
-        timer_ms( 1000 );
+        timer( 1000 );
 
         led_out( 0x33 );
         setBeepPatternS( 0x8000 );  // 2
-        timer_ms( 1000 );
+        timer( 1000 );
 
         led_out( 0x77 );
         setBeepPatternS( 0x8000 );  // 1
-        timer_ms( 1000 );
+        timer( 1000 );
 
         led_out( 0xff );
         setBeepPatternS( 0xffff );  // GO!
-        timer_ms( 1000 );
+        timer( 1000 );
 
         led_out( 0x00 );
 		
@@ -374,6 +366,7 @@ void main( void )
 		if( msdError == 0 ) msdFlag = 1; /* データ記録開始 */
 		iAngle0 = getServoAngle();  	/* 0度の位置記憶          */
 		iLancer0 = getLancerAngle();  	/* 0度の位置記憶          */
+		hyouteki_flag = 0;
 		cnt_run = 0;
         cnt1 = 0;		
 		pattern = 11;
@@ -437,18 +430,8 @@ void main( void )
 	
 	case 21:
 		servoPwmOut( iServoPwm );
-		if( iEncoder >= 22 ){
-			motor_mode_f(BRAKE,BRAKE);
-			motor_mode_r(BRAKE,BRAKE);
-			motor2_f(-50,-50);
-			motor2_r(-70,-70);	
-		}
-		else{
-			motor_mode_f(BRAKE,BRAKE);
-			motor_mode_r(BRAKE,BRAKE);
-			motor_f(diff(30),30);
-			motor_r(diff(30),30);		
-		}
+		traceMain();
+		
 		if( kyori_flug == 0 && (check_rightline()==1 || check_leftline()==1)  ){
             kyori_flug = 1;
         } else if( kyori_flug == 1 && (check_rightline()==1 || check_leftline()==1)){
@@ -662,7 +645,7 @@ void main( void )
 			heikou = 0;
 			pattern = 20;
 			cnt1 = 0;
-			break;	
+			break;
 		}
 	
 		if( check_crossline()){
@@ -675,7 +658,7 @@ void main( void )
 		if( lEncoderTotal - lEncoderLine >= 273L ){
 			pattern = 71;
 			lEncoderLine = lEncoderTotal;
-			cnt1 = 0;	
+			cnt1 = 0;
 		}
 		break;
 		
@@ -768,7 +751,7 @@ void main( void )
 		motor2_f( 0, 0 );
        	motor2_r( 0, 0 );
 		msdFlag = 0;
-		if( microSDProcessEnd() == 0 && iEncoder <= 0){
+		if( microSDProcessEnd() == 0 && iEncoder <= 10){
 			cnt1 = 0;
 			pattern = 102;	
 			setBeepPatternS( 0xcc00 );
@@ -788,8 +771,7 @@ void main( void )
 			else{
 				led_out( 0x00 );	
 			}
-			fullColor_out( i );
-			timer_ms( 200 );
+			timer( 200 );
 		}
 		break;
 	
@@ -850,8 +832,6 @@ void main( void )
 void init( void )
 {
   int i;
-
-  init_xin_clk();  // レジスタの初期化
 
   /* クロックをXINクロック(20MHz)に変更 */
   prc0  = 1;                          /* プロテクト解除               */
@@ -930,11 +910,11 @@ void init( void )
   trbcr  = 0x01;                      /* カウント開始                 */
 
   /* A/Dコンバータの設定 */
-//  admod   = 0x33;                     /* 繰り返し掃引モードに設定     */
-//  adinsel = 0x90;                     /* 入力端子P7の4端子を選択      */
-//  adcon1  = 0x30;                     /* A/D動作可能                  */
-//  _asm(" NOP ");                      /* φADの1サイクルウエイト入れる*/
-//  adcon0  = 0x01;                     /* A/D変換スタート              */
+  admod   = 0x33;                     /* 繰り返し掃引モードに設定     */
+  adinsel = 0xb0;                     /* 入力端子P7の8端子を選択      */
+  adcon1  = 0x30;                     /* A/D動作可能                  */
+  _asm(" NOP ");                      /* φADの1サイクルウエイト入れる*/
+  adcon0  = 0x01;                     /* A/D変換スタート              */
 
   /* タイマRG タイマモード(両エッジでカウント)の設定 */
   timsr = 0x40;                       /* TRGCLKA端子 P3_0に割り当てる */
@@ -984,6 +964,7 @@ void intTRB( void )
 
   _asm(" FSET I ");   /* タイマRB以上の割り込み許可   */
 
+  cnt0++;
   cnt1++;
   cnt_run++;
   check_sen_cnt++;
@@ -1002,7 +983,7 @@ void intTRB( void )
   microSDProcess();
 	
 
-  if( pattern >= 1 && pattern < 102){
+  if( pattern == 1){
 	 servoPwmOut(iServoPwm);
   }
   b = p3_0;
@@ -1102,6 +1083,11 @@ void intTRC( void )
   trcgrd = trcgrd_buff;
 }
 
+void timer( unsigned long timer_set ){
+	cnt0 = 0;
+	while(cnt0 < timer_set );	
+}
+
 /************************************************************************/
 /* カーブ検出処理(進入時のみ)                                           */
 /* 引数　 なし                                                          */
@@ -1110,15 +1096,10 @@ void intTRC( void )
 int check_crossline( void )
 {
   int ret = 0;
-  int angle;
 
-  angle = getServoAngle();
-
-  //if ( abs( angle ) <= 2 ) { // ハンドルがほぼ直線のとき
     if ( check_leftline() && check_rightline()) { // 左右のデジタルセンサが反応していればカーブ認識
       ret = 1;
     }
-  //}
 
   return ret;
 }
@@ -1452,7 +1433,7 @@ void servoPwmOut( int pwm )
 /************************************************************************/
 int getServoAngle( void )
 {
-    return( get_ad(14) - iAngle0 );
+    return( ad2 - iAngle0 );
 }
 
 /************************************************************************/
@@ -1465,7 +1446,7 @@ int getAnalogSensor( void )
   int ret;
 
   //  = 左  -  右
-  ret = (get_ad(12)) - get_ad(13);                    /* アナログセンサ情報取得       */
+  ret = ad0 - ad1;                    /* アナログセンサ情報取得       */
 
   return ret;
 }
@@ -1511,7 +1492,7 @@ void servoControl2( void )
 	
 	
 	i = iSetAngleAD; 						/* 設定したい角度 	*/
-	j = get_ad(14);				 			/* 現在の角度 		*/
+	j = ad2;				 			/* 現在の角度 		*/
 	
 	
 	/* サーボモータ用PWM値計算 */
@@ -1706,8 +1687,8 @@ void traceMain( void ){
 			if( iEncoder <= (dipsw_get() * 2 + 45) ){ //75
       			motor_mode_f( FREE, FREE );
       			motor_mode_r( FREE, FREE );
-            	motor2_f( 100, 100 );
-            	motor2_r( 100, 100 );
+            	motor_f( 100, 100 );
+            	motor_r( 100, 100 );
 			}
 			else{
 			motor_mode_f( BRAKE, BRAKE );
@@ -1765,7 +1746,7 @@ long map( long x, long in_min, long in_max, long out_min, long out_max ) {
 /************************************************************************/
 int getLancerAngle( void )
 {
-    return( get_ad(15) - iLancer0 );  // TypeS基板AN16(p7_4)のR13を外す
+    return( ad4 - iLancer0 );  // TypeS基板AN16(p7_4)のR13を外す
 }
 
 /************************************************************************/
@@ -1813,7 +1794,7 @@ void lancerControl( void )
 	
 	
 	i = iSetLancer; 						/* 設定したい角度 	*/
-	j = get_ad(15);				 			/* 現在の角度 		*/
+	j = ad4;				 			/* 現在の角度 		*/
 	 
 	/*     P                            D                      */
   	iRet = (3 * i) - ( 5 * (i - iLancerBefore));
