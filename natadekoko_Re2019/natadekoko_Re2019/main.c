@@ -47,7 +47,7 @@
 /* dipsw:　4?6 */
 #define  	KP  	15      /* 比例  */
 #define  	KI  	0     	/* 積分  */
-#define 	KD  	50      /* 微分  */
+#define 	KD  	75      /* 微分  */
 
 #define 	BEEP 				1
 #define 	ENC  				1   	/* エンコーダが有効か 1:有効 0:無効	*/
@@ -268,11 +268,7 @@ void main( void )
 			cnt1 = 0;
 		}	
 	}
-	if( pattern >= 1 && pattern < 101){
-		servoControl();
-		servoControl2();
-		servoPwmOut(iServoPwm);
-	}
+
 	  
     switch ( pattern ) {
       case 0:
@@ -320,6 +316,8 @@ void main( void )
 				msdPrintf("Time:");
 				while( checkMsdPrintf() );  // msdPrintf完了待ち
 				msdPrintf( C_TIME );
+				while( checkMsdPrintf() );  // msdPrintf完了待ち
+				msdPrintf("dipsw= %d",dipsw_get());
 				while( checkMsdPrintf() );  // msdPrintf完了待ち
 				msdPrintf("\n\nLineNo,Pattern,Left,Right,Cross,Analog,Angle,Encoder,v[m/s],kyoritime\n");
 				while( checkMsdPrintf() );  // msdPrintf完了待ち
@@ -407,19 +405,13 @@ void main( void )
 	  	/* カーブ進入時 */
 		setBeepPatternS( 0x8800 );
 		servoPwmOut(iServoPwm);
-		traceMain();
-#if ENCHU_ENABLE
-		
-		if( cnt_run > ( RUNNING_TIME - 6000 ) ){  // 終了5秒前なら円柱標的へ
-			pattern = 200;
-			cnt1 = 0;
-#if ENC
-        	lEncoderLine = lEncoderTotal;
-#endif // ENC
-			break;	
-		}
-#endif  // ENCHU_ENABLE 
-		
+		traceMain();		
+//		if( cnt_run > ( RUNNING_TIME - 6000 ) ){  // 終了5秒前なら円柱標的へ
+//			pattern = 200;
+//			cnt1 = 0;
+//        	lEncoderLine = lEncoderTotal;
+//			break;	
+//		}
 		kyori_flug = 0;
 		led_out( 0xff );
 		lEncoderLine = lEncoderTotal;
@@ -437,7 +429,8 @@ void main( void )
         } else if( kyori_flug == 1 && (check_rightline()==1 || check_leftline()==1)){
             kyori_flug = 2;
 		  /* クロスライン間の通過時間計測[ms] 白線手前から白線終わりまで */
-            kyoritime = cnt1;
+            //kyoritime = cnt1;
+			kyoritime = 1;
 		}
         if( kyori_flug == 2 ){
             kyori_flug = 0;
@@ -714,32 +707,24 @@ void main( void )
 			break;	
 		}
 		if( check_crossline() ){
-			heikou=0;
-			setBeepPatternS( 0x8800 );
+			heikou = 0;
 			pattern = 20;
 			cnt1 = 0;
 			break;	
 		}
-		if( heikou == 1 ){
+		if( heikou == 1 && check_rightline()){
 			pattern = 70;
 			cnt1 = 0;
 			break;
 		}
 		if( heikou >= 2 ){
-			if( (lEncoderTotal - lEncoderLine >= (273L * 1)) && check_rightline() ){
+			if( (lEncoderTotal - lEncoderLine >= (273L * 2)) && check_rightline() ){
 				lEncoderLine = lEncoderTotal;
 				heikou = 0;
 				pattern = 20;
 				cnt1 = 0;
 				break;
 			} 
-			if( check_leftline()){
-				lEncoderLine = lEncoderTotal;
-				heikou = 0;
-				pattern = 20;
-				cnt1 = 0;
-				break;
-			}
 		}
 		break;
 		
@@ -751,7 +736,7 @@ void main( void )
 		motor2_f( 0, 0 );
        	motor2_r( 0, 0 );
 		msdFlag = 0;
-		if( microSDProcessEnd() == 0 && iEncoder <= 10){
+		if( microSDProcessEnd() == 0 && cnt1 > 2000){
 			cnt1 = 0;
 			pattern = 102;	
 			setBeepPatternS( 0xcc00 );
@@ -760,19 +745,16 @@ void main( void )
 	
 	case 102:
 	  	servoPwmOut( 0 );
+		servoSet( 0 ); 
 		motor_mode_f( BRAKE, BRAKE );
 		motor_mode_r( BRAKE, BRAKE );
 		motor2_f( 0, 0 );
        	motor2_r( 0, 0 );
-		for( i = 1;i < 8; i++ ){
-			if (i % 2 == 0){
-				led_out( 0xff );	
-			} 
-			else{
-				led_out( 0x00 );	
-			}
-			timer( 200 );
-		}
+		led_out(0x00);
+		timer(200);
+		led_out(0xff);
+		timer(200);	
+		
 		break;
 	
 	case 200:
@@ -958,7 +940,7 @@ void intTRB( void )
 {
   unsigned char b;
   unsigned int i;
-  float v;
+  unsigned int  v;
   static int line_no; /* 行番号 */
   static int cnt2=0;
 
@@ -1044,8 +1026,7 @@ void intTRB( void )
     case 9: 
 	  /* microSD記録処理 */
 	  if( msdFlag == 1 ){
-	  		v = ((iEncoder*100) / 2725);
-			msdPrintf("%4d,%3d,%d,%d,%d,%5d,%4d,%2d,%f,%d\r\n",
+			msdPrintf("%4d,%3d,%d,%d,%d,%5d,%4d,%2d\r\n",
 				line_no,	// 行番号
 				pattern,	// 動作パターン
 				check_leftline(),  // デジタル左
@@ -1053,9 +1034,7 @@ void intTRB( void )
 				check_crossline(), // クロスラインチェック
 				getAnalogSensor(), // アナログセンサ
 				getServoAngle(),   // VR(ステアリング角度)
-				iEncoder,           // エンコーダ
-				v, // 速度[m/s]
-				kyoritime // kyoritime
+				iEncoder           // エンコーダ
 				
 			);
 			if(++line_no >= 10000 ) line_no = 0; 
@@ -1466,7 +1445,12 @@ void servoControl( void )
   iP = KP * i;                        /* 比例                         */
   iD = KD * ( iSensorBefore - i );    /* 微分(目安はPの5?10倍)       */
   iRet = iP - iD;
-  iRet /= 64;
+  if( pattern >= 20 && pattern <= 25 ){
+  	iRet /= 64;  // 104
+  }
+  else{
+	iRet /= 104;  // 104	  
+  }
 
   /* PWMの上限の設定 */
   if ( iRet >  SERVO_PWM_MAX ) iRet =  SERVO_PWM_MAX; /* マイコンカーが安定したら     */
@@ -1684,11 +1668,17 @@ void traceMain( void ){
 			motor_f( 80, diff(80) );
             motor_r( 80, diff(80) );
         } else {	
-			if( iEncoder <= (dipsw_get() * 2 + 45) ){ //75
+			if( iEncoder <= (dipsw_get() * 2 + 60) ){ //75
       			motor_mode_f( FREE, FREE );
       			motor_mode_r( FREE, FREE );
-            	motor_f( 100, 100 );
-            	motor_r( 100, 100 );
+				if( cnt_run <= 2000 ){
+            		motor2_f( 100, 100 );
+            		motor2_r( 100, 100 );
+				}
+				else{
+					motor_f( 100, 100 );
+            		motor_r( 100, 100 );	
+				}
 			}
 			else{
 			motor_mode_f( BRAKE, BRAKE );
@@ -1706,7 +1696,7 @@ void traceMain( void ){
 /* 引数   なし                                                          */
 /* 戻り値 変数hyouteki_flagに(平行標的:0 垂直標的:1)が入る              */
 /************************************************************************/
-void hyouteki_check( void ) { - hitcount;
+void hyouteki_check( void ) {
   switch ( hitcount ) {
     case 0:
       hyouteki_flag = 0;
@@ -2338,7 +2328,7 @@ void sp( int l , int r ){
 	
 	motor2_f( l, r );
 	if(cnt1 < 100){
-		motor2_r( -20, -20 );	
+		motor2_r( -10, -10 );	
 	}
 	else{
 		motor2_r( 30, diff(30) );
