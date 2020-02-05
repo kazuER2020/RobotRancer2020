@@ -3,10 +3,10 @@
 
 #define SERVO_CENTER   70 // サーボの中心位置(各機体に合わせて調整が必要) //hs-311: 78
 #define RIGHT_HEIKOU   85 // 槍を右に振る時の角度(平行標的)
-#define RIGHT_SUICHOKU_A 50 // (※A標的)槍を右に振る時の角度(垂直標的)
-#define LEFT_SUICHOKU_B -50 // 槍を左に振る時の角度(垂直標的)
-#define RIGHT_SUICHOKU_C 50 // (※C標的)槍を右に振る時の角度(垂直標的)
-#define LEFT_SUICHOKU_D -50 // 槍を左に振る時の角度(垂直標的)
+#define RIGHT_SUICHOKU_A 48 // (※A標的)槍を右に振る時の角度(垂直標的)
+#define LEFT_SUICHOKU_B -36 // 槍を左に振る時の角度(垂直標的)
+#define RIGHT_SUICHOKU_C 43 // (※C標的)槍を右に振る時の角度(垂直標的)
+#define LEFT_SUICHOKU_D -36 // 槍を左に振る時の角度(垂直標的)
 
 const int DEBUG_LED = 13;
 const int SERVO     = 9;           // サーボが接続されるピン
@@ -57,7 +57,7 @@ void loop() {
   if ( nowtime - starttime > 50 ) {
     starttime = nowtime;
     i = 1 - i;
-    digitalWrite(LED_BUILTIN, i );
+    digitalWrite(DEBUG_LED, i );
   }
 
   switch ( data ) {
